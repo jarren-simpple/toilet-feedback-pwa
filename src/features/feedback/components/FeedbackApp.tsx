@@ -2,6 +2,7 @@ import type { CSSProperties, ReactElement } from "react";
 import type { PanelConfig } from "../../../entities/panel/config";
 import { ConnectionPing } from "../../../shared/ui/ConnectionPing";
 import { LoadingOverlay } from "../../../shared/ui/LoadingOverlay";
+import { Toast } from "../../../shared/ui/Toast";
 import { Tier1Screen } from "./Tier1Screen";
 import { Tier2Screen } from "./Tier2Screen";
 import { Tier3Screen } from "./Tier3Screen";
@@ -24,6 +25,7 @@ export function FeedbackApp({ config, locationCode, isDemoMode = false }: Feedba
     isSubmittingFeedback,
     backgroundImageUrl,
     logoImageUrl,
+    toastMessage,
     onPickRating,
     onToggleCategory,
     onSubmitTier2Feedback,
@@ -63,6 +65,7 @@ export function FeedbackApp({ config, locationCode, isDemoMode = false }: Feedba
         {model.screen === "tier3" && <Tier3Screen resetMs={config.thankYouResetMs} onDismiss={onDismissTier3} />}
       </div>
       <LoadingOverlay isVisible={isSubmittingFeedback} text="Submitting feedback..." />
+      <Toast message={toastMessage} />
       <ConnectionPing />
       {isDemoMode && (
         <span className="demo-badge" aria-hidden="true">

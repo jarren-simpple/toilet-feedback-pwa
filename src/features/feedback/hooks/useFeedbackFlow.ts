@@ -7,6 +7,7 @@ import type { PanelState } from "../../../shared/types/panelState";
 import { isNegativePathRating, type Rating } from "../../../shared/types/rating";
 import { createPanelRealtimeProvider, type RealtimeStatus } from "../../../shared/api/panelRealtime";
 import { sendHeartbeat } from "../../../shared/api/heartbeatApi";
+import { useToast } from "../../../shared/ui/useToast";
 import { buildInitialFeedbackModel, feedbackReducer } from "../model/reducer";
 
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
@@ -20,6 +21,7 @@ interface UseFeedbackFlowResult {
   realtimeStatus: RealtimeStatus;
   backgroundImageUrl: string | null;
   logoImageUrl: string | null;
+  toastMessage: string | null;
   onPickRating: (rating: Rating) => Promise<void>;
   onToggleCategory: (categoryId: string) => void;
   onSubmitTier2Feedback: () => Promise<void>;
@@ -56,6 +58,7 @@ export function useFeedbackFlow(
     isDemoMode ? buildDemoPanelSnapshot(locationCode) : emptyPanelSnapshot(locationCode),
   );
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>(isDemoMode ? "live" : "connecting");
+  const { toastMessage, showToast } = useToast();
 
   const tier1Ratings = useMemo(() => buildTier1RatingRows(config), [config]);
   const tier2Items = useMemo(() => buildTier2Items(config), [config]);
@@ -180,14 +183,14 @@ export function useFeedbackFlow(
           await submitPositiveRatingFeedback(config, rating);
         } catch (error: unknown) {
           if (error instanceof Error && error.message === "CANT_GET_IP") {
-            window.alert("Can't get IP.");
+            showToast("Can't get IP.");
             return;
           }
           if (error instanceof Error && error.message === "FEEDBACK_COOLDOWN") {
-            window.alert("You need to wait 5 mins before submitting another feedback.");
+            showToast("You need to wait 5 mins before submitting another feedback.");
             return;
           }
-          window.alert("Feedback submission failed. Please try again.");
+          showToast("Feedback submission failed. Please try again.");
           return;
         } finally {
           setIsSubmittingFeedback(false);
@@ -196,7 +199,7 @@ export function useFeedbackFlow(
 
       dispatch({ type: "ratingSelected", rating });
     },
-    [config, isSubmittingFeedback],
+    [config, isSubmittingFeedback, showToast],
   );
 
   const onToggleCategory = useCallback((categoryId: string): void => {
@@ -215,22 +218,22 @@ export function useFeedbackFlow(
       dispatch({ type: "tier2Submitted", rating: submitRating });
     } catch (error: unknown) {
       if (error instanceof Error && error.message === "ITEM_ID_REQUIRED") {
-        window.alert("Selected feedback items do not contain valid API item IDs.");
+        showToast("Selected feedback items do not contain valid API item IDs.");
         return;
       }
       if (error instanceof Error && error.message === "CANT_GET_IP") {
-        window.alert("Can't get IP.");
+        showToast("Can't get IP.");
         return;
       }
       if (error instanceof Error && error.message === "FEEDBACK_COOLDOWN") {
-        window.alert("You need to wait 5 mins before submitting another feedback.");
+        showToast("You need to wait 5 mins before submitting another feedback.");
         return;
       }
-      window.alert("Feedback submission failed. Please try again.");
+      showToast("Feedback submission failed. Please try again.");
     } finally {
       setIsSubmittingFeedback(false);
     }
-  }, [config, isSubmittingFeedback, model.rating, model.selectedTier2CategoryIds]);
+  }, [config, isSubmittingFeedback, model.rating, model.selectedTier2CategoryIds, showToast]);
 
   const onDismissTier3 = useCallback((): void => {
     dispatch({ type: "tier3Dismissed", config });
@@ -249,6 +252,7 @@ export function useFeedbackFlow(
     realtimeStatus,
     backgroundImageUrl,
     logoImageUrl,
+    toastMessage,
     onPickRating,
     onToggleCategory,
     onSubmitTier2Feedback,

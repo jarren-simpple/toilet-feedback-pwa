@@ -114,6 +114,44 @@
   }
 }
 
+.feedback-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 2.25rem;
+  z-index: 1600;
+  max-width: min(90vw, 32rem);
+  transform: translateX(-50%);
+  border-radius: 12px;
+  padding: 0.85rem 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(18, 48, 31, 0.94);
+  box-shadow: var(--shadow);
+  animation: feedback-toast-in 0.18s ease-out;
+}
+
+.feedback-toast[hidden] {
+  display: none !important;
+}
+
+.feedback-toast-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+@keyframes feedback-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 .bg {
   position: absolute;
   inset: 0;
