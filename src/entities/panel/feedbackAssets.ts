@@ -26,7 +26,7 @@ const LOCAL_RATING_IMAGE_BY_RATING: Record<Rating, string> = {
 const LOCAL_TIER2_ICONS: ReadonlyArray<{ label: string; iconSrc: string }> = [
   { label: "Dirty Wall", iconSrc: "/icon-dirty-wall.png" },
   { label: "Dirty WC", iconSrc: "/icon-dirty-wc.png" },
-  { label: "Dirty Basin", iconSrc: "/icon-dirty-basin.png" },
+  { label: "Dirty Basin/ Mirror", iconSrc: "/icon-dirty-basin.png" },
   { label: "Dirty Cubicle", iconSrc: "/icon-dirty-cubicle.png" },
   { label: "Wet Floor", iconSrc: "/icon-wet-floor.png" },
   { label: "Smelly", iconSrc: "/icon-smelly.png" },
@@ -34,8 +34,8 @@ const LOCAL_TIER2_ICONS: ReadonlyArray<{ label: string; iconSrc: string }> = [
   { label: "Soap Empty", iconSrc: "/icon-soap-empty.png" },
   { label: "Sanitary Bin Full", iconSrc: "/icon-sanitary-bin-full.png" },
   { label: "Faulty Water Fixture", iconSrc: "/icon-faulty-water-fixture.png" },
-  { label: "Soap Dispenser Faulty", iconSrc: "/icon-soap-dispenser-faulty.png" },
-  { label: "Faulty Lights", iconSrc: "/icon-faulty-lights.png" },
+  { label: "Faulty Soap Dispenser", iconSrc: "/icon-soap-dispenser-faulty.png" },
+  { label: "Faulty Light", iconSrc: "/icon-faulty-lights.png" },
 ];
 
 const DEFAULT_TIER2_ICON = "/icon-dirty-wc.png";
