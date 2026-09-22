@@ -28,6 +28,7 @@ const LOCAL_TIER2_ICONS: ReadonlyArray<{ label: string; iconSrc: string }> = [
   { label: "Dirty WC", iconSrc: "/icon-dirty-wc.png" },
   { label: "Dirty Basin/ Mirror", iconSrc: "/icon-dirty-basin.png" },
   { label: "Dirty Cubicle", iconSrc: "/icon-dirty-cubicle.png" },
+  { label: "Dirty Urinal", iconSrc: "/icon-dirty-urinal.png" },
   { label: "Wet Floor", iconSrc: "/icon-wet-floor.png" },
   { label: "Smelly", iconSrc: "/icon-smelly.png" },
   { label: "Toilet Roll Empty", iconSrc: "/icon-toilet-roll-empty.png" },
