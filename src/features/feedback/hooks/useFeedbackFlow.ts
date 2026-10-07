@@ -9,8 +9,8 @@ import {
 } from "../../../shared/api/feedbackApi";
 import type { PanelState } from "../../../shared/types/panelState";
 import { isNegativePathRating, type Rating } from "../../../shared/types/rating";
-import { createPanelRealtimeProvider, type RealtimeStatus } from "../../../shared/api/panelRealtime";
-import { sendHeartbeat } from "../../../shared/api/heartbeatApi";
+import { createPanelRealtimeProvider, type RealtimeStatus } from "../../../entities/panel/realtime";
+import { sendHeartbeat } from "../../../entities/panel/heartbeat";
 import { useToast } from "../../../shared/ui/useToast";
 import { buildInitialFeedbackModel, feedbackReducer } from "../model/reducer";
 import { useSubmissionQueue } from "../queue/useSubmissionQueue";
