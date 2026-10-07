@@ -1,5 +1,5 @@
 import type { PanelConfig } from "../../entities/panel/config";
-import type { FeedbackPanelApiResponse, GateAuthFailureReason, GateAuthResult } from "./types";
+import type { FeedbackPanelApiResponse, GateAuthFailureReason, GateAuthResult } from "../../entities/panel/types";
 
 interface GateAuthPayload {
   locationCode: string;

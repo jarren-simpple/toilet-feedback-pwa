@@ -23,6 +23,7 @@ export function FeedbackApp({ config, locationCode, isDemoMode = false }: Feedba
     tier1Ratings,
     tier2Items,
     isSubmittingFeedback,
+    pendingSubmissionCount,
     backgroundImageUrl,
     logoImageUrl,
     toastMessage,
@@ -67,6 +68,15 @@ export function FeedbackApp({ config, locationCode, isDemoMode = false }: Feedba
       <LoadingOverlay isVisible={isSubmittingFeedback} text="Submitting feedback..." />
       <Toast message={toastMessage} />
       <ConnectionPing />
+      {pendingSubmissionCount > 0 && (
+        <div
+          className="pending-feedback-badge"
+          title={`${pendingSubmissionCount} feedback submission(s) waiting to send`}
+          aria-hidden="true"
+        >
+          {pendingSubmissionCount}
+        </div>
+      )}
       {isDemoMode && (
         <span className="demo-badge" aria-hidden="true">
           Demo

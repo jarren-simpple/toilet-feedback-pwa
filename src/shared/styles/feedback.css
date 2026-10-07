@@ -30,6 +30,27 @@
   pointer-events: none;
 }
 
+/* Staff-facing only: count of feedback submissions queued while offline,
+   waiting to send. Never blocks or is shown as an error to the visitor. */
+.pending-feedback-badge {
+  position: fixed;
+  top: 0.5rem;
+  right: 1.9rem;
+  z-index: 20;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #f1c40f;
+  color: #1a1a1a;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+
 .connection-ping-dot {
   display: block;
   width: 10px;

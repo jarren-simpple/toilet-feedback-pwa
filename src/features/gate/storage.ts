@@ -1,4 +1,4 @@
-import { clearPanelMetrics } from "../../shared/api/metricsStorage";
+import { clearPanelMetrics } from "../../entities/panel/metricsStorage";
 import { readLocalStorageItem, removeLocalStorageItem, writeLocalStorageItem } from "../../shared/lib/browserStorage";
 import { clearPanelSession } from "./panelSession";
 

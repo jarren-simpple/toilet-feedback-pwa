@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextScreenAfterRating } from "./flow";
+import { nextScreenAfterRating } from "./features/feedback/model/flow";
 
 describe("nextScreenAfterRating", () => {
   it("sends Excellent and Good straight to thank you (Tier 3)", () => {

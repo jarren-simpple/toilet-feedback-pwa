@@ -1,4 +1,4 @@
-import type { FeedbackItemConfig, FeedbackRatingConfig } from "../../entities/panel/config";
+import type { FeedbackItemConfig, FeedbackRatingConfig } from "./config";
 
 export interface FeedbackPanelApiResponse {
   feedback_panel?: FeedbackPanelApiResponse | null;

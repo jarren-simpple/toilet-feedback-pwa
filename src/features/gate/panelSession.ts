@@ -1,4 +1,4 @@
-import type { FeedbackPanelApiResponse } from "../../shared/api/types";
+import type { FeedbackPanelApiResponse } from "../../entities/panel/types";
 import { readLocalStorageItem, removeLocalStorageItem, writeLocalStorageItem } from "../../shared/lib/browserStorage";
 
 export const PANEL_SESSION_STORAGE_KEY = "simpple-feedback-panel-session";

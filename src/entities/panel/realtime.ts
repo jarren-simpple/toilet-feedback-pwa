@@ -1,6 +1,6 @@
-import type { PanelDataProvider, PanelState } from "../types/panelState";
+import type { PanelDataProvider, PanelState } from "../../shared/types/panelState";
 import { getStoredPanelMetrics, savePanelMetrics, snapshotHasBackupMetrics } from "./metricsStorage";
-import { NETWORK_RETRY_DELAYS_MS } from "../lib/retry";
+import { NETWORK_RETRY_DELAYS_MS } from "../../shared/lib/retry";
 
 type RealtimeStatus = "connecting" | "live" | "stale" | "error";
 

@@ -10,10 +10,10 @@ import { OrientationLock, useLandscapeGuard } from "../features/orientation/orie
 import type { PanelConfig } from "../entities/panel/config";
 import { loadPanelConfig } from "../entities/panel/config";
 import { DEMO_LOCATION_CODE, DEMO_PANEL_CONFIG } from "../entities/panel/demoConfig";
-import type { FeedbackPanelApiResponse } from "../shared/api/types";
-import { buildHeartbeatUrl, buildPanelRealtimeUrls } from "../shared/api/endpoints";
+import type { FeedbackPanelApiResponse } from "../entities/panel/types";
+import { buildHeartbeatUrl, buildPanelRealtimeUrls } from "../entities/panel/endpoints";
 import { authenticateGateWithBackend } from "../shared/api/gateApi";
-import { mapPanelResponseToConfigPatch } from "../shared/api/panelMappers";
+import { mapPanelResponseToConfigPatch } from "../entities/panel/mappers";
 import { nextNetworkRetryDelayMs, waitForRetry } from "../shared/lib/retry";
 
 interface RuntimeState {

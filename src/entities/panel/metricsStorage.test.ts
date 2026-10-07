@@ -4,7 +4,7 @@ import {
   getStoredPanelMetrics,
   savePanelMetrics,
 } from "./metricsStorage";
-import type { PanelState } from "../types/panelState";
+import type { PanelState } from "../../shared/types/panelState";
 
 class MemoryStorage {
   private readonly data = new Map<string, string>();

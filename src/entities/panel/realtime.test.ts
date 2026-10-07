@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPanelRealtimeProvider, mergePanelSnapshot, parsePanelMetricsEvent } from "./panelRealtime";
-import type { PanelState } from "../types/panelState";
+import { createPanelRealtimeProvider, mergePanelSnapshot, parsePanelMetricsEvent } from "./realtime";
+import type { PanelState } from "../../shared/types/panelState";
 
 function delayedPollResponse(payload: unknown): typeof fetch {
   return vi.fn().mockResolvedValue({

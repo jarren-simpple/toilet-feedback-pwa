@@ -2,13 +2,18 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { buildTier1RatingRows, buildTier2Items, resolveResourceImageUrl } from "../../../entities/panel/feedbackAssets";
 import type { PanelConfig } from "../../../entities/panel/config";
 import { buildDemoPanelSnapshot } from "../../../entities/panel/demoConfig";
-import { submitNegativeRatingFeedback, submitPositiveRatingFeedback } from "../../../shared/api/feedbackApi";
+import {
+  FeedbackSubmissionError,
+  submitNegativeRatingFeedback,
+  submitPositiveRatingFeedback,
+} from "../../../shared/api/feedbackApi";
 import type { PanelState } from "../../../shared/types/panelState";
 import { isNegativePathRating, type Rating } from "../../../shared/types/rating";
 import { createPanelRealtimeProvider, type RealtimeStatus } from "../../../shared/api/panelRealtime";
 import { sendHeartbeat } from "../../../shared/api/heartbeatApi";
 import { useToast } from "../../../shared/ui/useToast";
 import { buildInitialFeedbackModel, feedbackReducer } from "../model/reducer";
+import { useSubmissionQueue } from "../queue/useSubmissionQueue";
 
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -18,6 +23,8 @@ interface UseFeedbackFlowResult {
   tier1Ratings: ReturnType<typeof buildTier1RatingRows>;
   tier2Items: ReturnType<typeof buildTier2Items>;
   isSubmittingFeedback: boolean;
+  /** Feedback submissions queued while offline, still waiting to send. */
+  pendingSubmissionCount: number;
   realtimeStatus: RealtimeStatus;
   backgroundImageUrl: string | null;
   logoImageUrl: string | null;
@@ -54,6 +61,7 @@ export function useFeedbackFlow(
 ): UseFeedbackFlowResult {
   const [model, dispatch] = useReducer(feedbackReducer, buildInitialFeedbackModel(config));
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const { pendingCount: pendingSubmissionCount, enqueue: enqueueSubmission } = useSubmissionQueue();
   const [snapshot, setSnapshot] = useState<PanelState>(() =>
     isDemoMode ? buildDemoPanelSnapshot(locationCode) : emptyPanelSnapshot(locationCode),
   );
@@ -176,17 +184,22 @@ export function useFeedbackFlow(
         return;
       }
 
-      const shouldSubmitFeedback = (rating === "excellent" || rating === "good") && Boolean(config.feedbackPanelId);
-      if (shouldSubmitFeedback) {
+      const feedbackPanelId = config.feedbackPanelId;
+      const shouldSubmitFeedback = (rating === "excellent" || rating === "good") && typeof feedbackPanelId === "number";
+      if (shouldSubmitFeedback && typeof feedbackPanelId === "number") {
         setIsSubmittingFeedback(true);
-        try {
+          try {
           await submitPositiveRatingFeedback(config, rating);
         } catch (error: unknown) {
-          if (error instanceof Error && error.message === "CANT_GET_IP") {
-            showToast("Can't get IP.");
+          if (error instanceof FeedbackSubmissionError && error.reason === "network_unavailable") {
+            enqueueSubmission({
+              feedbackPanelId,
+              feedbackPanelItemsApiUrl: config.feedbackPanelItemsApiUrl,
+              rating,
+            });
             return;
           }
-          if (error instanceof Error && error.message === "FEEDBACK_COOLDOWN") {
+          if (error instanceof FeedbackSubmissionError && error.reason === "cooldown") {
             showToast("You need to wait 5 mins before submitting another feedback.");
             return;
           }
@@ -196,10 +209,9 @@ export function useFeedbackFlow(
           setIsSubmittingFeedback(false);
         }
       }
-
       dispatch({ type: "ratingSelected", rating });
     },
-    [config, isSubmittingFeedback, showToast],
+    [config, isSubmittingFeedback, showToast, enqueueSubmission],
   );
 
   const onToggleCategory = useCallback((categoryId: string): void => {
@@ -212,20 +224,27 @@ export function useFeedbackFlow(
     }
 
     const submitRating: Rating = model.rating && isNegativePathRating(model.rating) ? model.rating : "poor";
+    const feedbackPanelId = config.feedbackPanelId;
     setIsSubmittingFeedback(true);
     try {
       await submitNegativeRatingFeedback(config, submitRating, model.selectedTier2CategoryIds);
       dispatch({ type: "tier2Submitted", rating: submitRating });
     } catch (error: unknown) {
-      if (error instanceof Error && error.message === "ITEM_ID_REQUIRED") {
+      if (error instanceof FeedbackSubmissionError && error.reason === "network_unavailable" && typeof feedbackPanelId === "number") {
+        enqueueSubmission({
+          feedbackPanelId,
+          feedbackPanelItemsApiUrl: config.feedbackPanelItemsApiUrl,
+          rating: submitRating,
+          selectedItemIds: model.selectedTier2CategoryIds,
+        });
+        dispatch({ type: "tier2Submitted", rating: submitRating });
+        return;
+      }
+      if (error instanceof FeedbackSubmissionError && error.reason === "invalid_items") {
         showToast("Selected feedback items do not contain valid API item IDs.");
         return;
       }
-      if (error instanceof Error && error.message === "CANT_GET_IP") {
-        showToast("Can't get IP.");
-        return;
-      }
-      if (error instanceof Error && error.message === "FEEDBACK_COOLDOWN") {
+      if (error instanceof FeedbackSubmissionError && error.reason === "cooldown") {
         showToast("You need to wait 5 mins before submitting another feedback.");
         return;
       }
@@ -233,7 +252,7 @@ export function useFeedbackFlow(
     } finally {
       setIsSubmittingFeedback(false);
     }
-  }, [config, isSubmittingFeedback, model.rating, model.selectedTier2CategoryIds, showToast]);
+  }, [config, enqueueSubmission, isSubmittingFeedback, model.rating, model.selectedTier2CategoryIds, showToast]);
 
   const onDismissTier3 = useCallback((): void => {
     dispatch({ type: "tier3Dismissed", config });
@@ -249,6 +268,7 @@ export function useFeedbackFlow(
     tier1Ratings,
     tier2Items,
     isSubmittingFeedback,
+    pendingSubmissionCount,
     realtimeStatus,
     backgroundImageUrl,
     logoImageUrl,

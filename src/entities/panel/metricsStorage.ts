@@ -1,5 +1,5 @@
-import type { PanelState } from "../types/panelState";
-import { readLocalStorageItem, removeLocalStorageItem, writeLocalStorageItem } from "../lib/browserStorage";
+import type { PanelState } from "../../shared/types/panelState";
+import { readLocalStorageItem, removeLocalStorageItem, writeLocalStorageItem } from "../../shared/lib/browserStorage";
 
 export const PANEL_METRICS_STORAGE_KEY = "simpple-feedback-panel-metrics";
 const STORAGE_VERSION = 1;

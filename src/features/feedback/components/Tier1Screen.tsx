@@ -3,7 +3,7 @@ import { MetricCard } from "../../../shared/ui/MetricCard";
 import type { PanelConfig } from "../../../entities/panel/config";
 import type { Tier1RatingRow } from "../../../entities/panel/feedbackAssets";
 import type { PanelState } from "../../../shared/types/panelState";
-import type { RealtimeStatus } from "../../../shared/api/panelRealtime";
+import type { RealtimeStatus } from "../../../entities/panel/realtime";
 import type { Rating } from "../../../shared/types/rating";
 
 interface Tier1ScreenProps {

@@ -1,4 +1,4 @@
-import type { FeedbackItemConfig, PanelConfig } from "../../entities/panel/config";
+import type { FeedbackItemConfig, PanelConfig } from "./config";
 import type { FeedbackPanelApiResponse } from "./types";
 
 export function mapPanelResponseToConfigPatch(data: FeedbackPanelApiResponse | null): Partial<PanelConfig> {
