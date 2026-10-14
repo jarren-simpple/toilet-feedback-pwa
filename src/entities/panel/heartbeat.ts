@@ -1,3 +1,5 @@
+import { runWithTimeout } from "../../shared/lib/timeout";
+
 const HEARTBEAT_TIMEOUT_MS = 8_000;
 
 interface NavigatorConnection {
@@ -15,26 +17,24 @@ function getNetworkType(): string {
 }
 
 /**
- * Fire-and-forget: a missed heartbeat isn't fatal, so failures are swallowed
- * rather than surfaced or retried.
+ * Best-effort: failures are swallowed rather than surfaced. Resolves `true` when the server
+ * acknowledged it, so the caller can retry once instead of waiting a full interval.
  */
-export async function sendHeartbeat(heartbeatUrl: string, feedbackPanelId: number): Promise<void> {
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), HEARTBEAT_TIMEOUT_MS);
-
+export async function sendHeartbeat(heartbeatUrl: string, feedbackPanelId: number): Promise<boolean> {
   try {
-    await fetch(heartbeatUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        feedback_panel_id: feedbackPanelId,
-        network_type: getNetworkType(),
-      }),
-      signal: controller.signal,
+    return await runWithTimeout(HEARTBEAT_TIMEOUT_MS, async (signal) => {
+      const response = await fetch(heartbeatUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          feedback_panel_id: feedbackPanelId,
+          network_type: getNetworkType(),
+        }),
+        signal,
+      });
+      return response.ok;
     });
   } catch {
-    // Ignored: heartbeat delivery is best-effort.
-  } finally {
-    window.clearTimeout(timeoutId);
+    return false;
   }
 }

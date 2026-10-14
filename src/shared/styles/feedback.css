@@ -72,6 +72,10 @@
   background: #f1c40f;
 }
 
+.connection-ping-slow .connection-ping-dot {
+  background: #e67e22;
+}
+
 @keyframes connection-ping-pulse {
   0% {
     box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.5);
@@ -139,7 +143,7 @@
   position: absolute;
   inset: 0;
   z-index: 0;
-  background-image: var(--panel-bg-image, url("/panel-background.png"));
+  background-image: var(--panel-bg-image, url("/panel-background.jpg"));
   background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
@@ -148,7 +152,7 @@
 .bg-tier2 {
   background-image:
     linear-gradient(rgba(8, 20, 12, 0.42), rgba(8, 20, 12, 0.42)),
-    var(--panel-bg-image, url("/panel-background-tier2.png"));
+    var(--panel-bg-image, url("/panel-background-tier2.jpg"));
 }
 
 .bg::after {

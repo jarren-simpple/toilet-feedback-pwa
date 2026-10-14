@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { enqueueSubmission, getQueuedSubmissions, removeQueuedSubmission } from "./queueStorage";
+import {
+  QUEUE_MAX_ENTRIES,
+  enqueueSubmission,
+  getQueueCooldownUntil,
+  getQueuedSubmissions,
+  removeQueuedSubmission,
+  setQueueCooldownUntil,
+} from "./queueStorage";
 
 class MemoryStorage {
   private readonly data = new Map<string, string>();
@@ -78,5 +85,24 @@ describe("queueStorage", () => {
   it("ignores malformed stored data instead of throwing", () => {
     localStorage.setItem("simpple-feedback-submission-queue", "{not json");
     expect(getQueuedSubmissions()).toEqual([]);
+  });
+
+  it("keeps only the newest entries once the cap is reached", () => {
+    for (let index = 0; index < QUEUE_MAX_ENTRIES + 5; index += 1) {
+      enqueueSubmission({ feedbackPanelId: index, rating: "good" });
+    }
+    const queued = getQueuedSubmissions();
+    expect(queued).toHaveLength(QUEUE_MAX_ENTRIES);
+    expect(queued[0].feedbackPanelId).toBe(5);
+  });
+
+  it("keeps the cooldown window when entries are added or removed", () => {
+    setQueueCooldownUntil(123_456);
+    const entry = enqueueSubmission({ feedbackPanelId: 1, rating: "good" });
+    expect(getQueueCooldownUntil()).toBe(123_456);
+    removeQueuedSubmission(entry.id);
+    expect(getQueueCooldownUntil()).toBe(123_456);
+    setQueueCooldownUntil(null);
+    expect(getQueueCooldownUntil()).toBeNull();
   });
 });

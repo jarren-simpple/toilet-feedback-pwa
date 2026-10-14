@@ -16,7 +16,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // The SW still skips waiting and claims clients, but the page reload is ours to schedule
+      // (src/shared/lib/serviceWorker.ts) so it never interrupts a visitor. Don't inject a second registration.
       registerType: "autoUpdate",
+      injectRegister: false,
       includeManifestIcons: false,
       manifest: {
         name: "Toilet Feedback Panel",
@@ -46,7 +49,26 @@ export default defineConfig({
       },
       workbox: {
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,json}"],
+        // Take control of the already-open page as soon as the SW activates. Without this the
+        // first load after install stays uncontrolled until a reload, so a kiosk that loses its
+        // connection before then can't load anything it hasn't fetched yet (e.g. Tier 2 icons).
+        clientsClaim: true,
+        skipWaiting: true,
+        globPatterns: ["**/*.{js,css,html,ico,png,jpg,svg,json}"],
+        runtimeCaching: [
+          {
+            // Panel logo / custom background from S3 (or any other host). Serve from cache once
+            // seen so they survive offline and show instantly; refreshed in the background.
+            urlPattern: ({ request, sameOrigin }) => !sameOrigin && request.destination === "image",
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "remote-panel-images",
+              expiration: { maxEntries: 20, maxAgeSeconds: 30 * 24 * 60 * 60 },
+              // 0 = opaque response from a plain <img>/CSS fetch without CORS.
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
     }),
   ],

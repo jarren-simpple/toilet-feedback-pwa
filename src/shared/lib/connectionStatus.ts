@@ -1,37 +1,55 @@
 import { useEffect, useState } from "react";
+import { runWithTimeout } from "./timeout";
 
-export type ConnectionStatus = "checking" | "online" | "offline";
+export type ConnectionStatus = "checking" | "online" | "slow" | "offline";
 
-const PING_ASSET_PATH = "/favicon.svg";
-const PING_TIMEOUT_MS = 5000;
+const FALLBACK_PING_PATH = "/favicon.svg";
+const PING_TIMEOUT_MS = 8000;
+/** A round-trip slower than this still works but feedback may take a while to send. */
+const SLOW_PING_MS = 2500;
 const DEFAULT_PING_INTERVAL_MS = 20_000;
 
-/** Same-origin HEAD request so a live kiosk can tell "server unreachable" apart from `navigator.onLine`, which only reflects the OS network adapter and can read true with no real connectivity. */
-async function pingOnce(): Promise<boolean> {
+/**
+ * Pings the API host so the dot reflects what actually matters (can feedback reach the backend?)
+ * rather than the static host serving the app. `no-cors` keeps this a plain reachability check:
+ * any HTTP answer (even a 404 or CORS-less response) resolves; only a network failure rejects.
+ * `navigator.onLine` alone only reflects the OS network adapter and can read true with no real
+ * connectivity.
+ */
+async function pingOnce(pingUrl: string | undefined): Promise<ConnectionStatus> {
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
-    return false;
+    return "offline";
   }
   if (typeof fetch === "undefined") {
-    return true;
+    return "online";
   }
 
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), PING_TIMEOUT_MS);
+  const startedAt = Date.now();
   try {
-    const response = await fetch(`${PING_ASSET_PATH}?ping=${Date.now()}`, {
-      method: "HEAD",
-      cache: "no-store",
-      signal: controller.signal,
+    await runWithTimeout(PING_TIMEOUT_MS, async (signal) => {
+      const separator = (pingUrl ?? FALLBACK_PING_PATH).includes("?") ? "&" : "?";
+      const target = `${pingUrl ?? FALLBACK_PING_PATH}${separator}ping=${Date.now()}`;
+      const response = await fetch(target, {
+        method: "HEAD",
+        cache: "no-store",
+        mode: pingUrl ? "no-cors" : "same-origin",
+        signal,
+      });
+      if (!pingUrl && !response.ok) {
+        throw new Error("ping failed");
+      }
     });
-    return response.ok;
   } catch {
-    return false;
-  } finally {
-    window.clearTimeout(timeoutId);
+    return "offline";
   }
+  return Date.now() - startedAt > SLOW_PING_MS ? "slow" : "online";
 }
 
-export function useConnectionStatus(intervalMs: number = DEFAULT_PING_INTERVAL_MS): ConnectionStatus {
+/** `pingUrl` should be on the API host; when omitted, falls back to a same-origin asset. */
+export function useConnectionStatus(
+  pingUrl?: string,
+  intervalMs: number = DEFAULT_PING_INTERVAL_MS,
+): ConnectionStatus {
   const [status, setStatus] = useState<ConnectionStatus>("checking");
 
   useEffect(() => {
@@ -43,10 +61,10 @@ export function useConnectionStatus(intervalMs: number = DEFAULT_PING_INTERVAL_M
         return;
       }
       inFlight = true;
-      const isOnline = await pingOnce();
+      const next = await pingOnce(pingUrl);
       inFlight = false;
       if (!cancelled) {
-        setStatus(isOnline ? "online" : "offline");
+        setStatus(next);
       }
     };
 
@@ -72,7 +90,19 @@ export function useConnectionStatus(intervalMs: number = DEFAULT_PING_INTERVAL_M
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [intervalMs]);
+  }, [pingUrl, intervalMs]);
 
   return status;
+}
+
+/** The API origin to ping, derived from the panel items URL; undefined if it can't be parsed. */
+export function apiPingUrl(feedbackPanelItemsApiUrl: string | undefined): string | undefined {
+  if (!feedbackPanelItemsApiUrl) {
+    return undefined;
+  }
+  try {
+    return `${new URL(feedbackPanelItemsApiUrl).origin}/`;
+  } catch {
+    return undefined;
+  }
 }

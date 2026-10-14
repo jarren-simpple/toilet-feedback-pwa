@@ -2,6 +2,21 @@ import { ratingToSubmitLabel } from "../../entities/panel/config";
 import type { Rating } from "../types/rating";
 import { buildFeedbackEndpoints, buildTier2SubmitUrl } from "../../entities/panel/endpoints";
 import { getCurrentIpv4Address } from "./ip";
+import { runWithTimeout } from "../lib/timeout";
+
+/** Availability is only a pre-check (errors are swallowed), so give up on it quickly. */
+const AVAILABILITY_TIMEOUT_MS = 3_000;
+/** Covers the whole submit, including reading the response body. */
+const SUBMIT_TIMEOUT_MS = 10_000;
+
+export interface FeedbackSubmissionOptions {
+  /**
+   * Overall deadline across the IP lookup, availability check and submit. Aborting it surfaces
+   * as `network_unavailable`, so an interactive caller can queue and move on instead of keeping
+   * the visitor waiting on a weak link.
+   */
+  signal?: AbortSignal;
+}
 
 /**
  * Only the fields a submission actually needs — narrower than `PanelConfig` so
@@ -30,7 +45,11 @@ export class FeedbackSubmissionError extends Error {
   }
 }
 
-export async function submitPositiveRatingFeedback(target: FeedbackSubmissionTarget, rating: Rating): Promise<void> {
+export async function submitPositiveRatingFeedback(
+  target: FeedbackSubmissionTarget,
+  rating: Rating,
+  options: FeedbackSubmissionOptions = {},
+): Promise<void> {
   if (!(rating === "excellent" || rating === "good")) {
     return;
   }
@@ -39,12 +58,12 @@ export async function submitPositiveRatingFeedback(target: FeedbackSubmissionTar
   }
 
   const endpoints = buildFeedbackEndpoints(target.feedbackPanelItemsApiUrl);
-  const ip = await getCurrentIpv4Address();
+  const ip = await getCurrentIpv4Address(options.signal);
   if (!ip) {
     throw new FeedbackSubmissionError("network_unavailable");
   }
 
-  await ensureFeedbackAvailable(endpoints.availabilityUrl, target.feedbackPanelId, ip);
+  await ensureFeedbackAvailable(endpoints.availabilityUrl, target.feedbackPanelId, ip, options.signal);
 
   const ratingLabel = ratingToSubmitLabel(rating);
   const payload = new URLSearchParams({
@@ -58,13 +77,14 @@ export async function submitPositiveRatingFeedback(target: FeedbackSubmissionTar
     lng: "",
   });
 
-  await postFeedbackForm(endpoints.submitUrl, payload);
+  await postFeedbackForm(endpoints.submitUrl, payload, options.signal);
 }
 
 export async function submitNegativeRatingFeedback(
   target: FeedbackSubmissionTarget,
   rating: Rating,
   selectedItemIds: string[],
+  options: FeedbackSubmissionOptions = {},
 ): Promise<void> {
   if (!(rating === "neutral" || rating === "poor")) {
     return;
@@ -75,12 +95,12 @@ export async function submitNegativeRatingFeedback(
 
   const endpoints = buildFeedbackEndpoints(target.feedbackPanelItemsApiUrl);
   const submitUrl = buildTier2SubmitUrl(target.feedbackPanelItemsApiUrl, endpoints.submitUrl);
-  const ip = await getCurrentIpv4Address();
+  const ip = await getCurrentIpv4Address(options.signal);
   if (!ip) {
     throw new FeedbackSubmissionError("network_unavailable");
   }
 
-  await ensureFeedbackAvailable(endpoints.availabilityUrl, target.feedbackPanelId, ip);
+  await ensureFeedbackAvailable(endpoints.availabilityUrl, target.feedbackPanelId, ip, options.signal);
 
   const ratingLabel = toNegativeSubmitLabel(rating);
   const normalizedItemIds = normalizeNumericItemIds(selectedItemIds);
@@ -103,7 +123,7 @@ export async function submitNegativeRatingFeedback(
     payload.append("item_id[]", itemId);
   }
 
-  await postFeedbackForm(submitUrl, payload);
+  await postFeedbackForm(submitUrl, payload, options.signal);
 }
 
 function normalizeNumericItemIds(selectedItemIds: string[]): string[] {
@@ -131,9 +151,14 @@ function toNegativeSubmitLabel(rating: Rating): string {
  * whether the network is up, so any error here besides a real cooldown is
  * swallowed and the caller proceeds to attempt the submit.
  */
-async function ensureFeedbackAvailable(availabilityUrl: string, feedbackPanelId: number, ip: string): Promise<void> {
+async function ensureFeedbackAvailable(
+  availabilityUrl: string,
+  feedbackPanelId: number,
+  ip: string,
+  signal?: AbortSignal,
+): Promise<void> {
   try {
-    const isAvailable = await callFeedbackAvailability(availabilityUrl, feedbackPanelId, ip);
+    const isAvailable = await callFeedbackAvailability(availabilityUrl, feedbackPanelId, ip, signal);
     if (!isAvailable) {
       throw new FeedbackSubmissionError("cooldown");
     }
@@ -144,18 +169,28 @@ async function ensureFeedbackAvailable(availabilityUrl: string, feedbackPanelId:
   }
 }
 
-async function callFeedbackAvailability(availabilityUrl: string, feedbackPanelId: number, ip: string): Promise<boolean> {
+async function callFeedbackAvailability(
+  availabilityUrl: string,
+  feedbackPanelId: number,
+  ip: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const url = new URL(availabilityUrl);
   url.searchParams.set("feedback_panel_id", String(feedbackPanelId));
   url.searchParams.set("ip", ip);
 
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    return true;
-  }
-
-  const data = (await response.json()) as unknown;
-  return data !== false;
+  return runWithTimeout(
+    AVAILABILITY_TIMEOUT_MS,
+    async (timeoutSignal) => {
+      const response = await fetch(url.toString(), { signal: timeoutSignal, cache: "no-store" });
+      if (!response.ok) {
+        return true;
+      }
+      const data = (await response.json()) as unknown;
+      return data !== false;
+    },
+    signal,
+  );
 }
 
 /**
@@ -164,27 +199,27 @@ async function callFeedbackAvailability(availabilityUrl: string, feedbackPanelId
  * succeeding — `fetch` throwing, a non-2xx response, an unparsable body — is
  * treated as the server being unreachable rather than assumed to be a
  * cooldown, so it can be queued and retried instead of shown to the visitor
- * as a wrong "you're on cooldown" message.
+ * as a wrong "you're on cooldown" message. A timeout counts as unreachable too.
  */
-async function postFeedbackForm(submitUrl: string, payload: URLSearchParams): Promise<void> {
-  let response: Response;
-  try {
-    response = await fetch(submitUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: payload.toString(),
-    });
-  } catch {
-    throw new FeedbackSubmissionError("network_unavailable");
-  }
-
-  if (!response.ok) {
-    throw new FeedbackSubmissionError("network_unavailable");
-  }
-
+async function postFeedbackForm(submitUrl: string, payload: URLSearchParams, signal?: AbortSignal): Promise<void> {
   let body: unknown;
   try {
-    body = await response.json();
+    body = await runWithTimeout(
+      SUBMIT_TIMEOUT_MS,
+      async (timeoutSignal) => {
+        const response = await fetch(submitUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+          body: payload.toString(),
+          signal: timeoutSignal,
+        });
+        if (!response.ok) {
+          throw new FeedbackSubmissionError("network_unavailable");
+        }
+        return (await response.json()) as unknown;
+      },
+      signal,
+    );
   } catch {
     throw new FeedbackSubmissionError("network_unavailable");
   }
