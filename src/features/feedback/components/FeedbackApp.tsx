@@ -1,11 +1,40 @@
+import { useEffect, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import type { PanelConfig } from "../../../entities/panel/config";
+import { apiPingUrl } from "../../../shared/lib/connectionStatus";
+import { setReloadGuard } from "../../../shared/lib/serviceWorker";
 import { ConnectionPing } from "../../../shared/ui/ConnectionPing";
 import { LoadingOverlay } from "../../../shared/ui/LoadingOverlay";
 import { Tier1Screen } from "./Tier1Screen";
 import { Tier2Screen } from "./Tier2Screen";
 import { Tier3Screen } from "./Tier3Screen";
 import { useFeedbackFlow } from "../hooks/useFeedbackFlow";
+
+/** Below this a submit just feels instant, so don't flash the overlay. */
+const OVERLAY_SHOW_DELAY_MS = 400;
+/** After this, tell the visitor it's the connection, not a frozen screen. */
+const OVERLAY_SLOW_AFTER_MS = 3000;
+
+type OverlayStage = "hidden" | "sending" | "slow";
+
+function useSubmitOverlayStage(isSubmitting: boolean): OverlayStage {
+  const [stage, setStage] = useState<OverlayStage>("hidden");
+
+  useEffect(() => {
+    if (!isSubmitting) {
+      setStage("hidden");
+      return;
+    }
+    const showTimer = window.setTimeout(() => setStage("sending"), OVERLAY_SHOW_DELAY_MS);
+    const slowTimer = window.setTimeout(() => setStage("slow"), OVERLAY_SLOW_AFTER_MS);
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(slowTimer);
+    };
+  }, [isSubmitting]);
+
+  return stage;
+}
 
 interface FeedbackAppProps {
   config: PanelConfig;
@@ -31,6 +60,15 @@ export function FeedbackApp({ config, locationCode, isDemoMode = false }: Feedba
     onDismissTier3,
     onBackToTier1,
   } = useFeedbackFlow(config, locationCode, isDemoMode);
+
+  const overlayStage = useSubmitOverlayStage(isSubmittingFeedback);
+  const isIdleOnFirstScreen = model.screen === "tier1" && !isSubmittingFeedback;
+
+  // A downloaded app update reloads the page; only allow that while nobody is mid-feedback.
+  useEffect(() => {
+    setReloadGuard(() => isIdleOnFirstScreen);
+    return () => setReloadGuard(null);
+  }, [isIdleOnFirstScreen]);
 
   const isTier2 = model.screen === "tier2";
   const backgroundStyle = backgroundImageUrl
@@ -63,8 +101,11 @@ export function FeedbackApp({ config, locationCode, isDemoMode = false }: Feedba
         )}
         {model.screen === "tier3" && <Tier3Screen resetMs={config.thankYouResetMs} onDismiss={onDismissTier3} />}
       </div>
-      <LoadingOverlay isVisible={isSubmittingFeedback} text="Submitting feedback..." />
-      <ConnectionPing />
+      <LoadingOverlay
+        isVisible={overlayStage !== "hidden"}
+        text={overlayStage === "slow" ? "Slow connection, still sending..." : "Submitting feedback..."}
+      />
+      <ConnectionPing pingUrl={isDemoMode ? undefined : apiPingUrl(config.feedbackPanelItemsApiUrl)} />
       {pendingSubmissionCount > 0 && (
         <div
           className="pending-feedback-badge"

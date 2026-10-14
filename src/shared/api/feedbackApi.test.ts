@@ -159,3 +159,29 @@ describe("FeedbackSubmissionError", () => {
     expect(error).toBeInstanceOf(Error);
   });
 });
+
+describe("submission deadline", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("gives up with network_unavailable when the caller's deadline passes mid-submit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("ipify")) {
+          return jsonResponse({ ip: "203.0.113.5" });
+        }
+        if (url.includes("getFeedbackAvailability")) {
+          return jsonResponse(true);
+        }
+        return new Promise<Response>(() => undefined);
+      }),
+    );
+    const controller = new AbortController();
+    const submission = submitPositiveRatingFeedback({ feedbackPanelId: 7 }, "excellent", { signal: controller.signal });
+    setTimeout(() => controller.abort(), 20);
+    await expectReason(submission, "network_unavailable");
+  });
+});

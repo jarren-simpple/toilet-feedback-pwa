@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { getFeedbackPanelItemsApiUrl, MissingFeedbackPanelEnvError } from "../entities/panel/config";
 import { RootApp } from "./RootApp";
+import { registerServiceWorker } from "../shared/lib/serviceWorker";
 
 function renderConfigEnvError(rootElement: HTMLElement, message: string): void {
   rootElement.textContent = "";
@@ -33,7 +34,6 @@ export async function bootstrap(): Promise<void> {
   createRoot(rootElement).render(<RootApp />);
 
   if (import.meta.env.PROD) {
-    const { registerSW } = await import("virtual:pwa-register");
-    registerSW({ immediate: true });
+    await registerServiceWorker();
   }
 }

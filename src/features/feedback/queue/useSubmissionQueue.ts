@@ -15,6 +15,10 @@ export interface UseSubmissionQueueResult {
  * `online` event, and on a backoff timer as a fallback for the cases where
  * that event doesn't fire. Reusing `NETWORK_RETRY_DELAYS_MS` (2s up to 30s,
  * same as the realtime metrics poller) rather than hammering the endpoint.
+ * While the backend cooldown is active the next attempt waits until it ends.
+ *
+ * Every request inside a flush has its own timeout, so a stalled connection
+ * can't leave `inFlightRef` stuck and silently stop the queue.
  */
 export function useSubmissionQueue(): UseSubmissionQueueResult {
   const [pendingCount, setPendingCount] = useState(() => getQueuedSubmissions().length);
@@ -35,15 +39,22 @@ export function useSubmissionQueue(): UseSubmissionQueueResult {
     }
     inFlightRef.current = true;
     void flushSubmissionQueue()
-      .then((drained) => {
+      .catch(() => ({ status: "offline" as const }))
+      .then((result) => {
         setPendingCount(getQueuedSubmissions().length);
         clearTimer();
-        if (drained) {
+        if (result.status === "drained") {
           attemptIndexRef.current = 0;
           return;
         }
-        const delayMs = nextNetworkRetryDelayMs(attemptIndexRef.current);
-        attemptIndexRef.current += 1;
+        let delayMs: number;
+        if (result.status === "cooldown") {
+          attemptIndexRef.current = 0;
+          delayMs = Math.max(result.retryAtMs - Date.now(), 1_000);
+        } else {
+          delayMs = nextNetworkRetryDelayMs(attemptIndexRef.current);
+          attemptIndexRef.current += 1;
+        }
         timerRef.current = window.setTimeout(attemptFlush, delayMs);
       })
       .finally(() => {

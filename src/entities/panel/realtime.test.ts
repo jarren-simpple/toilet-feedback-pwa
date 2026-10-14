@@ -196,4 +196,35 @@ describe("createPanelRealtimeProvider", () => {
     expect(saved.at(-1)?.humidityPct).toBe(55);
     provider.stop();
   });
+
+  it("treats a poll that never answers as a failure and polls again", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise<Response>(() => undefined))
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ panel_id: 7, footfall: 3, temperature: 21, humidity: 50 }),
+      }) as unknown as typeof fetch;
+    const provider = createPanelRealtimeProvider({
+      locationLabel: "L1",
+      panelId: 7,
+      urls: { latestMetricsUrl: "https://example.test/latest-metrics" },
+      pollIntervalMs: 60_000,
+      requestTimeoutMs: 30,
+      retryDelaysMs: [20],
+      fetchImpl,
+      metricsCache: {
+        load: () => null,
+        save: () => undefined,
+      },
+    });
+
+    provider.start();
+    await vi.waitFor(() => {
+      expect(provider.getStatus()).toBe("live");
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(provider.getSnapshot().footfall).toBe(3);
+    provider.stop();
+  });
 });
