@@ -17,19 +17,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: [
-        "favicon.svg",
-        "pwa-192x192.png",
-        "pwa-512x512.png",
-        "awesome_face.png",
-        "good_face.png",
-        "neutral_face.png",
-        "sad_face.png",
-        "panel-background.png",
-        "panel-background-tier2.png",
-        "reload.png",
-        "icon-*.png",
-      ],
+      includeManifestIcons: false,
       manifest: {
         name: "Toilet Feedback Panel",
         short_name: "Toilet Panel",
@@ -58,7 +46,7 @@ export default defineConfig({
       },
       workbox: {
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest,json}"],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,json}"],
       },
     }),
   ],
