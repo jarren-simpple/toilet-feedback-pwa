@@ -11,6 +11,7 @@ import type { PanelState } from "../../../shared/types/panelState";
 import { isNegativePathRating, type Rating } from "../../../shared/types/rating";
 import { createPanelRealtimeProvider, type RealtimeStatus } from "../../../entities/panel/realtime";
 import { sendHeartbeat } from "../../../entities/panel/heartbeat";
+import { useToast } from "../../../shared/ui/useToast";
 import { buildInitialFeedbackModel, feedbackReducer } from "../model/reducer";
 import { useSubmissionQueue } from "../queue/useSubmissionQueue";
 import { createDeadline } from "../../../shared/lib/timeout";
@@ -36,6 +37,7 @@ interface UseFeedbackFlowResult {
   realtimeStatus: RealtimeStatus;
   backgroundImageUrl: string | null;
   logoImageUrl: string | null;
+  toastMessage: string | null;
   onPickRating: (rating: Rating) => Promise<void>;
   onToggleCategory: (categoryId: string) => void;
   onSubmitTier2Feedback: () => Promise<void>;
@@ -73,6 +75,7 @@ export function useFeedbackFlow(
     isDemoMode ? buildDemoPanelSnapshot(locationCode) : emptyPanelSnapshot(locationCode),
   );
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>(isDemoMode ? "live" : "connecting");
+  const { toastMessage, showToast } = useToast();
 
   const tier1Ratings = useMemo(() => buildTier1RatingRows(config), [config]);
   const tier2Items = useMemo(() => buildTier2Items(config), [config]);
@@ -222,30 +225,27 @@ export function useFeedbackFlow(
           await submitPositiveRatingFeedback(config, rating, { signal: deadline.signal });
         } catch (error: unknown) {
           if (error instanceof FeedbackSubmissionError && error.reason === "network_unavailable") {
-            // Offline: queue it and proceed as if it had succeeded. The queue
-            // resubmits silently once connectivity returns — the visitor is
-            // never made to wait on the network.
             enqueueSubmission({
               feedbackPanelId,
               feedbackPanelItemsApiUrl: config.feedbackPanelItemsApiUrl,
               rating,
             });
-          } else if (error instanceof FeedbackSubmissionError && error.reason === "cooldown") {
-            window.alert("You need to wait 5 mins before submitting another feedback.");
-            return;
-          } else {
-            window.alert("Feedback submission failed. Please try again.");
             return;
           }
+          if (error instanceof FeedbackSubmissionError && error.reason === "cooldown") {
+            showToast("You need to wait 5 mins before submitting another feedback.");
+            return;
+          }
+          showToast("Feedback submission failed. Please try again.");
+          return;
         } finally {
           deadline.cancel();
           setIsSubmittingFeedback(false);
         }
       }
-
       dispatch({ type: "ratingSelected", rating });
     },
-    [config, enqueueSubmission, isSubmittingFeedback],
+    [config, isSubmittingFeedback, showToast, enqueueSubmission],
   );
 
   const onToggleCategory = useCallback((categoryId: string): void => {
@@ -268,7 +268,6 @@ export function useFeedbackFlow(
       dispatch({ type: "tier2Submitted", rating: submitRating });
     } catch (error: unknown) {
       if (error instanceof FeedbackSubmissionError && error.reason === "network_unavailable" && typeof feedbackPanelId === "number") {
-        // Offline: queue it and advance to Thank You as if it had succeeded.
         enqueueSubmission({
           feedbackPanelId,
           feedbackPanelItemsApiUrl: config.feedbackPanelItemsApiUrl,
@@ -279,19 +278,19 @@ export function useFeedbackFlow(
         return;
       }
       if (error instanceof FeedbackSubmissionError && error.reason === "invalid_items") {
-        window.alert("Selected feedback items do not contain valid API item IDs.");
+        showToast("Selected feedback items do not contain valid API item IDs.");
         return;
       }
       if (error instanceof FeedbackSubmissionError && error.reason === "cooldown") {
-        window.alert("You need to wait 5 mins before submitting another feedback.");
+        showToast("You need to wait 5 mins before submitting another feedback.");
         return;
       }
-      window.alert("Feedback submission failed. Please try again.");
+      showToast("Feedback submission failed. Please try again.");
     } finally {
       deadline.cancel();
       setIsSubmittingFeedback(false);
     }
-  }, [config, enqueueSubmission, isSubmittingFeedback, model.rating, model.selectedTier2CategoryIds]);
+  }, [config, enqueueSubmission, isSubmittingFeedback, model.rating, model.selectedTier2CategoryIds, showToast]);
 
   const onDismissTier3 = useCallback((): void => {
     dispatch({ type: "tier3Dismissed", config });
@@ -311,6 +310,7 @@ export function useFeedbackFlow(
     realtimeStatus,
     backgroundImageUrl,
     logoImageUrl,
+    toastMessage,
     onPickRating,
     onToggleCategory,
     onSubmitTier2Feedback,
