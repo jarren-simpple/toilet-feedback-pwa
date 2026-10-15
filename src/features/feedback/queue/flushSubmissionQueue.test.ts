@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { flushSubmissionQueue } from "./flushSubmissionQueue";
-import { enqueueSubmission, getQueuedSubmissions } from "./queueStorage";
+import { QUEUE_COOLDOWN_MS, flushSubmissionQueue } from "./flushSubmissionQueue";
+import { QUEUE_ENTRY_MAX_AGE_MS, enqueueSubmission, getQueueCooldownUntil, getQueuedSubmissions } from "./queueStorage";
 
 class MemoryStorage {
   private readonly data = new Map<string, string>();
@@ -28,7 +28,7 @@ function jsonResponse(body: unknown, ok = true): Response {
 interface FetchBehavior {
   ip?: "ok" | "unreachable";
   availability?: "available" | "unavailable" | "unreachable";
-  submit?: "ok" | "cooldown" | "unreachable" | "http_error";
+  submit?: "ok" | "cooldown" | "unreachable" | "http_error" | "hang";
 }
 
 function stubFetch(behavior: FetchBehavior): ReturnType<typeof vi.fn> {
@@ -53,6 +53,9 @@ function stubFetch(behavior: FetchBehavior): ReturnType<typeof vi.fn> {
       if (behavior.submit === "unreachable") {
         throw new Error("network down");
       }
+      if (behavior.submit === "hang") {
+        return new Promise<Response>(() => undefined);
+      }
       if (behavior.submit === "http_error") {
         return jsonResponse(true, false);
       }
@@ -76,7 +79,7 @@ describe("flushSubmissionQueue", () => {
 
   it("does nothing and reports drained when the queue is empty", async () => {
     const fetchMock = stubFetch({});
-    await expect(flushSubmissionQueue()).resolves.toBe(true);
+    await expect(flushSubmissionQueue()).resolves.toEqual({ status: "drained" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -84,7 +87,7 @@ describe("flushSubmissionQueue", () => {
     stubFetch({ ip: "ok", availability: "available", submit: "ok" });
     enqueueSubmission({ feedbackPanelId: 7, rating: "excellent" });
 
-    await expect(flushSubmissionQueue()).resolves.toBe(true);
+    await expect(flushSubmissionQueue()).resolves.toEqual({ status: "drained" });
     expect(getQueuedSubmissions()).toEqual([]);
   });
 
@@ -92,7 +95,7 @@ describe("flushSubmissionQueue", () => {
     stubFetch({ ip: "ok", availability: "available", submit: "ok" });
     enqueueSubmission({ feedbackPanelId: 7, rating: "poor", selectedItemIds: ["1", "2"] });
 
-    await expect(flushSubmissionQueue()).resolves.toBe(true);
+    await expect(flushSubmissionQueue()).resolves.toEqual({ status: "drained" });
     expect(getQueuedSubmissions()).toEqual([]);
   });
 
@@ -100,7 +103,7 @@ describe("flushSubmissionQueue", () => {
     stubFetch({ ip: "unreachable" });
     enqueueSubmission({ feedbackPanelId: 7, rating: "excellent" });
 
-    await expect(flushSubmissionQueue()).resolves.toBe(false);
+    await expect(flushSubmissionQueue()).resolves.toEqual({ status: "offline" });
     expect(getQueuedSubmissions()).toHaveLength(1);
   });
 
@@ -109,25 +112,69 @@ describe("flushSubmissionQueue", () => {
     enqueueSubmission({ feedbackPanelId: 7, rating: "excellent" });
     enqueueSubmission({ feedbackPanelId: 7, rating: "good" });
 
-    await expect(flushSubmissionQueue()).resolves.toBe(false);
+    await expect(flushSubmissionQueue()).resolves.toEqual({ status: "offline" });
     expect(getQueuedSubmissions()).toHaveLength(2);
     // Only the first entry's ip lookup should have been attempted.
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("drops an entry that comes back as a confirmed cooldown rather than retrying it forever", async () => {
-    stubFetch({ ip: "ok", availability: "available", submit: "cooldown" });
+  it("keeps an entry that hits the backend cooldown and pauses the queue until it passes", async () => {
+    const fetchMock = stubFetch({ ip: "ok", availability: "available", submit: "cooldown" });
+    enqueueSubmission({ feedbackPanelId: 7, rating: "excellent" });
+    let now = 1_000_000;
+
+    await expect(flushSubmissionQueue(() => now)).resolves.toEqual({
+      status: "cooldown",
+      retryAtMs: now + QUEUE_COOLDOWN_MS,
+    });
+    expect(getQueuedSubmissions()).toHaveLength(1);
+    expect(getQueueCooldownUntil()).toBe(now + QUEUE_COOLDOWN_MS);
+
+    // Within the window nothing is sent at all.
+    fetchMock.mockClear();
+    now += QUEUE_COOLDOWN_MS - 1;
+    await expect(flushSubmissionQueue(() => now)).resolves.toMatchObject({ status: "cooldown" });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Once it has passed, the entry is retried and delivered.
+    stubFetch({ ip: "ok", availability: "available", submit: "ok" });
+    now += 2;
+    await expect(flushSubmissionQueue(() => now)).resolves.toEqual({ status: "drained" });
+    expect(getQueuedSubmissions()).toEqual([]);
+    expect(getQueueCooldownUntil()).toBeNull();
+  });
+
+  it("drops entries older than the max age instead of retrying them forever", async () => {
+    const fetchMock = stubFetch({ ip: "ok", availability: "available", submit: "ok" });
     enqueueSubmission({ feedbackPanelId: 7, rating: "excellent" });
 
-    await expect(flushSubmissionQueue()).resolves.toBe(true);
+    await expect(flushSubmissionQueue(() => Date.now() + QUEUE_ENTRY_MAX_AGE_MS + 1)).resolves.toEqual({
+      status: "drained",
+    });
     expect(getQueuedSubmissions()).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("gives up on a submit that never answers instead of hanging the queue", async () => {
+    vi.useFakeTimers();
+    try {
+      stubFetch({ ip: "ok", availability: "available", submit: "hang" });
+      enqueueSubmission({ feedbackPanelId: 7, rating: "excellent" });
+
+      const result = flushSubmissionQueue();
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(result).resolves.toEqual({ status: "offline" });
+      expect(getQueuedSubmissions()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("drops a negative-rating entry whose item ids are no longer valid", async () => {
     stubFetch({ ip: "ok", availability: "available", submit: "ok" });
     enqueueSubmission({ feedbackPanelId: 7, rating: "poor", selectedItemIds: ["not-numeric"] });
 
-    await expect(flushSubmissionQueue()).resolves.toBe(true);
+    await expect(flushSubmissionQueue()).resolves.toEqual({ status: "drained" });
     expect(getQueuedSubmissions()).toEqual([]);
   });
 
@@ -135,7 +182,7 @@ describe("flushSubmissionQueue", () => {
     stubFetch({ ip: "ok", availability: "available", submit: "http_error" });
     enqueueSubmission({ feedbackPanelId: 7, rating: "excellent" });
 
-    await expect(flushSubmissionQueue()).resolves.toBe(false);
+    await expect(flushSubmissionQueue()).resolves.toEqual({ status: "offline" });
     expect(getQueuedSubmissions()).toHaveLength(1);
   });
 });

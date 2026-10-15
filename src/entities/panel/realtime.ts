@@ -1,6 +1,7 @@
 import type { PanelDataProvider, PanelState } from "../../shared/types/panelState";
 import { getStoredPanelMetrics, savePanelMetrics, snapshotHasBackupMetrics } from "./metricsStorage";
 import { NETWORK_RETRY_DELAYS_MS } from "../../shared/lib/retry";
+import { runWithTimeout } from "../../shared/lib/timeout";
 
 type RealtimeStatus = "connecting" | "live" | "stale" | "error";
 
@@ -33,6 +34,8 @@ interface CreatePanelRealtimeProviderOptions {
   urls: RealtimeUrls;
   pollIntervalMs?: number;
   staleAfterMs?: number;
+  /** Budget for one poll (headers and body). A stalled request otherwise blocks every later poll. */
+  requestTimeoutMs?: number;
   retryDelaysMs?: readonly number[];
   onStatusChange?: (status: RealtimeStatus) => void;
   now?: () => number;
@@ -53,6 +56,7 @@ interface ParsedMetricsEvent {
 
 const DEFAULT_POLL_INTERVAL_MS = 60_000;
 const DEFAULT_STALE_AFTER_MS = 150_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 export function createLocalStorageMetricsCache(locationLabel: string, panelId?: number): PanelMetricsCache {
   return {
@@ -68,6 +72,7 @@ export function createLocalStorageMetricsCache(locationLabel: string, panelId?: 
 export function createPanelRealtimeProvider(options: CreatePanelRealtimeProviderOptions): PanelRealtimeProvider {
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
+  const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const retryDelaysMs = options.retryDelaysMs ?? NETWORK_RETRY_DELAYS_MS;
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? (() => Date.now());
@@ -162,23 +167,33 @@ export function createPanelRealtimeProvider(options: CreatePanelRealtimeProvider
     inFlight = true;
     clearPollTimer();
     abortController = new AbortController();
+    const latestMetricsUrl = options.urls.latestMetricsUrl;
     let ok = false;
     try {
-      const response = await fetchImpl(options.urls.latestMetricsUrl, {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-        signal: abortController.signal,
-      });
+      const result = await runWithTimeout(
+        requestTimeoutMs,
+        async (signal) => {
+          const response = await fetchImpl(latestMetricsUrl, {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+            signal,
+          });
+          if (!response.ok) {
+            return { ok: false as const };
+          }
+          return { ok: true as const, payload: (await response.json()) as unknown };
+        },
+        abortController.signal,
+      );
       if (stopped) {
         return;
       }
-      if (!response.ok) {
+      if (!result.ok) {
         markPollFailure();
         return;
       }
-      const payload = (await response.json()) as unknown;
-      const parsed = parsePanelMetricsPayload(payload);
+      const parsed = parsePanelMetricsPayload(result.payload);
       if (!parsed) {
         markPollFailure();
         return;
@@ -190,9 +205,10 @@ export function createPanelRealtimeProvider(options: CreatePanelRealtimeProvider
       applySnapshotUpdate(parsed.update);
       ok = true;
     } catch (error) {
-      if (stopped || (error instanceof Error && error.name === "AbortError")) {
+      if (stopped) {
         return;
       }
+      // Includes timeouts: a stalled poll is a failure, not something to wait on forever.
       markPollFailure();
     } finally {
       inFlight = false;

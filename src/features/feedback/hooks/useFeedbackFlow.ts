@@ -14,8 +14,17 @@ import { sendHeartbeat } from "../../../entities/panel/heartbeat";
 import { useToast } from "../../../shared/ui/useToast";
 import { buildInitialFeedbackModel, feedbackReducer } from "../model/reducer";
 import { useSubmissionQueue } from "../queue/useSubmissionQueue";
+import { createDeadline } from "../../../shared/lib/timeout";
+import { useLoadedImageUrl } from "../../../shared/lib/useLoadedImageUrl";
 
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
+/** One missed heartbeat shouldn't make a working panel look offline for a full interval. */
+const HEARTBEAT_RETRY_DELAY_MS = 60 * 1000;
+/**
+ * Longest a visitor waits on the network after tapping. Past this the submission is queued and
+ * the flow advances as if it had succeeded; the queue delivers it in the background.
+ */
+const INTERACTIVE_SUBMIT_DEADLINE_MS = 8_000;
 
 interface UseFeedbackFlowResult {
   model: ReturnType<typeof buildInitialFeedbackModel>;
@@ -70,13 +79,16 @@ export function useFeedbackFlow(
 
   const tier1Ratings = useMemo(() => buildTier1RatingRows(config), [config]);
   const tier2Items = useMemo(() => buildTier2Items(config), [config]);
-  const backgroundImageUrl = useMemo(
-    () => panelAssetUrl(config.customBackgroundImage),
-    [config.customBackgroundImage],
+  // Remote images are only applied once they've actually loaded, so a failed or slow download
+  // leaves the bundled default background (and no broken logo) instead of a blank panel.
+  const backgroundImageUrl = useLoadedImageUrl(
+    useMemo(() => panelAssetUrl(config.customBackgroundImage), [config.customBackgroundImage]),
   );
-  const logoImageUrl = useMemo(
-    () => panelAssetUrl(config.logoImage) ?? panelAssetUrl(config.secondaryLogoImage),
-    [config.logoImage, config.secondaryLogoImage],
+  const logoImageUrl = useLoadedImageUrl(
+    useMemo(
+      () => panelAssetUrl(config.logoImage) ?? panelAssetUrl(config.secondaryLogoImage),
+      [config.logoImage, config.secondaryLogoImage],
+    ),
   );
 
   useEffect(() => {
@@ -124,12 +136,31 @@ export function useFeedbackFlow(
     }
 
     let timer: number | null = null;
+    let retryTimer: number | null = null;
+
+    const clearRetry = (): void => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
 
     const tick = (): void => {
       if (document.visibilityState !== "visible") {
         return;
       }
-      void sendHeartbeat(heartbeatUrl, feedbackPanelId);
+      clearRetry();
+      void sendHeartbeat(heartbeatUrl, feedbackPanelId).then((delivered) => {
+        if (delivered || timer === null) {
+          return;
+        }
+        retryTimer = window.setTimeout(() => {
+          retryTimer = null;
+          if (document.visibilityState === "visible") {
+            void sendHeartbeat(heartbeatUrl, feedbackPanelId);
+          }
+        }, HEARTBEAT_RETRY_DELAY_MS);
+      });
     };
 
     const start = (): void => {
@@ -141,6 +172,7 @@ export function useFeedbackFlow(
     };
 
     const stop = (): void => {
+      clearRetry();
       if (timer !== null) {
         window.clearInterval(timer);
         timer = null;
@@ -188,8 +220,9 @@ export function useFeedbackFlow(
       const shouldSubmitFeedback = (rating === "excellent" || rating === "good") && typeof feedbackPanelId === "number";
       if (shouldSubmitFeedback && typeof feedbackPanelId === "number") {
         setIsSubmittingFeedback(true);
-          try {
-          await submitPositiveRatingFeedback(config, rating);
+        const deadline = createDeadline(INTERACTIVE_SUBMIT_DEADLINE_MS);
+        try {
+          await submitPositiveRatingFeedback(config, rating, { signal: deadline.signal });
         } catch (error: unknown) {
           if (error instanceof FeedbackSubmissionError && error.reason === "network_unavailable") {
             enqueueSubmission({
@@ -206,6 +239,7 @@ export function useFeedbackFlow(
           showToast("Feedback submission failed. Please try again.");
           return;
         } finally {
+          deadline.cancel();
           setIsSubmittingFeedback(false);
         }
       }
@@ -226,8 +260,11 @@ export function useFeedbackFlow(
     const submitRating: Rating = model.rating && isNegativePathRating(model.rating) ? model.rating : "poor";
     const feedbackPanelId = config.feedbackPanelId;
     setIsSubmittingFeedback(true);
+    const deadline = createDeadline(INTERACTIVE_SUBMIT_DEADLINE_MS);
     try {
-      await submitNegativeRatingFeedback(config, submitRating, model.selectedTier2CategoryIds);
+      await submitNegativeRatingFeedback(config, submitRating, model.selectedTier2CategoryIds, {
+        signal: deadline.signal,
+      });
       dispatch({ type: "tier2Submitted", rating: submitRating });
     } catch (error: unknown) {
       if (error instanceof FeedbackSubmissionError && error.reason === "network_unavailable" && typeof feedbackPanelId === "number") {
@@ -250,6 +287,7 @@ export function useFeedbackFlow(
       }
       showToast("Feedback submission failed. Please try again.");
     } finally {
+      deadline.cancel();
       setIsSubmittingFeedback(false);
     }
   }, [config, enqueueSubmission, isSubmittingFeedback, model.rating, model.selectedTier2CategoryIds, showToast]);
