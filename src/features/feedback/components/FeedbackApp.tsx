@@ -5,6 +5,7 @@ import { apiPingUrl } from "../../../shared/lib/connectionStatus";
 import { setReloadGuard } from "../../../shared/lib/serviceWorker";
 import { ConnectionPing } from "../../../shared/ui/ConnectionPing";
 import { LoadingOverlay } from "../../../shared/ui/LoadingOverlay";
+import { Toast } from "../../../shared/ui/Toast";
 import { Tier1Screen } from "./Tier1Screen";
 import { Tier2Screen } from "./Tier2Screen";
 import { Tier3Screen } from "./Tier3Screen";
@@ -54,6 +55,7 @@ export function FeedbackApp({ config, locationCode, isDemoMode = false }: Feedba
     pendingSubmissionCount,
     backgroundImageUrl,
     logoImageUrl,
+    toastMessage,
     onPickRating,
     onToggleCategory,
     onSubmitTier2Feedback,
@@ -105,6 +107,7 @@ export function FeedbackApp({ config, locationCode, isDemoMode = false }: Feedba
         isVisible={overlayStage !== "hidden"}
         text={overlayStage === "slow" ? "Slow connection, still sending..." : "Submitting feedback..."}
       />
+      <Toast message={toastMessage} />
       <ConnectionPing pingUrl={isDemoMode ? undefined : apiPingUrl(config.feedbackPanelItemsApiUrl)} />
       {pendingSubmissionCount > 0 && (
         <div

@@ -320,6 +320,12 @@
   justify-content: center;
   gap: 1rem;
 }
+
+/* Kiosk has no keyboard; the default UA focus ring renders as a yellow box after a tap on some WebViews. */
+.rating-btn:focus,
+.rating-btn:focus-visible {
+  outline: none;
+}
 .rating-face {
   font-size: clamp(2rem, 4vw, 2.75rem);
 }
