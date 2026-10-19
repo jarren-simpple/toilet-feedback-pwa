@@ -29,6 +29,19 @@ npm test         # Vitest (tier navigation logic)
 
 Deploy the contents of `**dist/**` to any HTTPS static host (S3, Netlify, nginx, etc.). PWAs require **HTTPS** (except `localhost`).
 
+### Per-client builds
+
+`npm run build` is the **BCA** build (`dist/`, existing S3 + CloudFront). Other clients build with their own mode
+into their own folder and deploy to their own subdomain:
+
+| Client | Build | Output | Host |
+|---|---|---|---|
+| BCA | `npm run build` | `dist/` | existing bucket / CloudFront |
+| Certis | `npm run build:certis` | `dist-certis/` | `certis.pwafbp.simpple.app` |
+
+`npm run dev:certis` / `npm run preview:certis` run that client locally. Client UI differences live in
+[`src/clients/`](src/clients/README.md); names and theme colours in `clients.config.ts`.
+
 ## Configuration
 
 The app now uses in-code defaults for kiosk/base settings and loads feedback panel items/ratings from backend API after successful gate login (`/api/feedback/getFeedbackPanelItems`).
