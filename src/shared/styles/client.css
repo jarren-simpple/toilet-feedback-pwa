@@ -1,0 +1,2 @@
+/* Client theme hook: empty for BCA. A client overrides this file at
+   src/clients/<client>/overrides/shared/styles/client.css to restyle on top of the shared CSS. */

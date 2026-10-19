@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev:certis": "vite --mode certis",
+    "build:certis": "tsc && vite build --mode certis",
+    "preview:certis": "vite preview --mode certis"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
